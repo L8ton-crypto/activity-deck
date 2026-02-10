@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useRef, useCallback, useEffect, useState } from 'react';
 import { Activity } from '@/types';
 
 interface ActivityCardProps {
@@ -11,56 +11,182 @@ interface ActivityCardProps {
 }
 
 export function ActivityCard({ activity, onSwipe, isFavorite, isDone }: ActivityCardProps) {
-  const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
-  const [currentTransform, setCurrentTransform] = useState({ x: 0, rotation: 0 });
-  const [isDragging, setIsDragging] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
+  const dragState = useRef({
+    isDragging: false,
+    startX: 0,
+    startY: 0,
+    currentX: 0,
+    velocityX: 0,
+    lastX: 0,
+    lastTime: 0,
+    animating: false,
+  });
+  const [visual, setVisual] = useState({ x: 0, rotation: 0, opacity: 1 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [exitDirection, setExitDirection] = useState<'left' | 'right' | null>(null);
+  const rafRef = useRef<number>(0);
 
-  const handleMouseDown = (e: React.MouseEvent) => {
-    setDragStart({ x: e.clientX, y: e.clientY });
+  const SWIPE_THRESHOLD = 80;
+  const VELOCITY_THRESHOLD = 0.5;
+  const MAX_ROTATION = 15;
+
+  const updateVisual = useCallback((x: number) => {
+    const rotation = (x / window.innerWidth) * MAX_ROTATION * 2;
+    const progress = Math.min(Math.abs(x) / (SWIPE_THRESHOLD * 2), 1);
+    const opacity = 1 - progress * 0.15;
+    setVisual({ x, rotation, opacity });
+  }, []);
+
+  const animateSpringBack = useCallback(() => {
+    const state = dragState.current;
+    state.animating = true;
+    
+    let x = state.currentX;
+    let velocity = 0;
+    const stiffness = 0.15;
+    const damping = 0.75;
+
+    const step = () => {
+      const force = -x * stiffness;
+      velocity = (velocity + force) * damping;
+      x += velocity;
+
+      if (Math.abs(x) < 0.5 && Math.abs(velocity) < 0.5) {
+        updateVisual(0);
+        state.currentX = 0;
+        state.animating = false;
+        return;
+      }
+
+      updateVisual(x);
+      state.currentX = x;
+      rafRef.current = requestAnimationFrame(step);
+    };
+    
+    rafRef.current = requestAnimationFrame(step);
+  }, [updateVisual]);
+
+  const animateExit = useCallback((direction: 'left' | 'right') => {
+    const state = dragState.current;
+    state.animating = true;
+    setExitDirection(direction);
+
+    const targetX = direction === 'right' ? window.innerWidth * 1.5 : -window.innerWidth * 1.5;
+    let x = state.currentX;
+    const speed = Math.max(Math.abs(state.velocityX) * 0.5, 15);
+    const step = direction === 'right' ? speed : -speed;
+
+    const animate = () => {
+      x += step;
+      const rotation = (x / window.innerWidth) * MAX_ROTATION * 3;
+      const progress = Math.abs(x) / Math.abs(targetX);
+      setVisual({ x, rotation, opacity: 1 - progress * 0.6 });
+
+      if (Math.abs(x) < Math.abs(targetX)) {
+        rafRef.current = requestAnimationFrame(animate);
+      } else {
+        state.animating = false;
+        setExitDirection(null);
+        setVisual({ x: 0, rotation: 0, opacity: 1 });
+        state.currentX = 0;
+        onSwipe(direction);
+      }
+    };
+
+    rafRef.current = requestAnimationFrame(animate);
+  }, [onSwipe, updateVisual]);
+
+  const handleStart = useCallback((clientX: number, clientY: number) => {
+    const state = dragState.current;
+    if (state.animating) return;
+    
+    state.isDragging = true;
+    state.startX = clientX;
+    state.startY = clientY;
+    state.lastX = clientX;
+    state.lastTime = Date.now();
+    state.velocityX = 0;
     setIsDragging(true);
-  };
+  }, []);
 
-  const handleTouchStart = (e: React.TouchEvent) => {
-    const touch = e.touches[0];
-    setDragStart({ x: touch.clientX, y: touch.clientY });
-    setIsDragging(true);
-  };
+  const handleMove = useCallback((clientX: number) => {
+    const state = dragState.current;
+    if (!state.isDragging) return;
 
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (!dragStart || !isDragging) return;
-    
-    const deltaX = e.clientX - dragStart.x;
-    const rotation = deltaX * 0.1; // Subtle rotation
-    
-    setCurrentTransform({ x: deltaX, rotation });
-  };
-
-  const handleTouchMove = (e: React.TouchEvent) => {
-    if (!dragStart || !isDragging) return;
-    
-    const touch = e.touches[0];
-    const deltaX = touch.clientX - dragStart.x;
-    const rotation = deltaX * 0.1;
-    
-    setCurrentTransform({ x: deltaX, rotation });
-  };
-
-  const handleEnd = () => {
-    if (!isDragging) return;
-    
-    const threshold = 100;
-    
-    if (Math.abs(currentTransform.x) > threshold) {
-      const direction = currentTransform.x > 0 ? 'right' : 'left';
-      onSwipe(direction);
+    const now = Date.now();
+    const dt = now - state.lastTime;
+    if (dt > 0) {
+      state.velocityX = (clientX - state.lastX) / dt;
     }
-    
-    // Reset position
-    setCurrentTransform({ x: 0, rotation: 0 });
-    setDragStart(null);
+    state.lastX = clientX;
+    state.lastTime = now;
+
+    const deltaX = clientX - state.startX;
+    state.currentX = deltaX;
+    updateVisual(deltaX);
+  }, [updateVisual]);
+
+  const handleEnd = useCallback(() => {
+    const state = dragState.current;
+    if (!state.isDragging) return;
+
+    state.isDragging = false;
     setIsDragging(false);
-  };
+
+    const absDelta = Math.abs(state.currentX);
+    const absVelocity = Math.abs(state.velocityX);
+    const direction = state.currentX > 0 ? 'right' : 'left';
+
+    // Swipe if past threshold OR fast enough flick in one direction
+    if (absDelta > SWIPE_THRESHOLD || (absVelocity > VELOCITY_THRESHOLD && absDelta > 30)) {
+      animateExit(direction as 'left' | 'right');
+    } else {
+      animateSpringBack();
+    }
+  }, [animateExit, animateSpringBack]);
+
+  // Mouse events
+  const onMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    handleStart(e.clientX, e.clientY);
+  }, [handleStart]);
+
+  useEffect(() => {
+    const onMouseMove = (e: MouseEvent) => handleMove(e.clientX);
+    const onMouseUp = () => handleEnd();
+
+    if (isDragging) {
+      window.addEventListener('mousemove', onMouseMove);
+      window.addEventListener('mouseup', onMouseUp);
+    }
+    return () => {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+  }, [isDragging, handleMove, handleEnd]);
+
+  // Touch events
+  const onTouchStart = useCallback((e: React.TouchEvent) => {
+    const touch = e.touches[0];
+    handleStart(touch.clientX, touch.clientY);
+  }, [handleStart]);
+
+  const onTouchMove = useCallback((e: React.TouchEvent) => {
+    const touch = e.touches[0];
+    handleMove(touch.clientX);
+  }, [handleMove]);
+
+  const onTouchEnd = useCallback(() => {
+    handleEnd();
+  }, [handleEnd]);
+
+  // Cleanup RAF on unmount
+  useEffect(() => {
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+  }, []);
 
   const getEnergyColor = (energy: string) => {
     switch (energy) {
@@ -80,50 +206,45 @@ export function ActivityCard({ activity, onSwipe, isFavorite, isDone }: Activity
     }
   };
 
+  const swipeProgress = Math.abs(visual.x) / SWIPE_THRESHOLD;
+
   return (
     <div
       ref={cardRef}
-      className={`relative w-80 h-96 bg-white rounded-2xl shadow-lg cursor-grab active:cursor-grabbing transition-transform duration-200 ${
-        isDragging ? '' : 'hover:scale-105'
-      }`}
+      className="relative w-80 h-96 bg-white rounded-2xl shadow-lg select-none touch-none"
       style={{
-        transform: `translateX(${currentTransform.x}px) rotate(${currentTransform.rotation}deg)`,
-        opacity: isDragging && Math.abs(currentTransform.x) > 50 ? 0.8 : 1,
+        transform: `translateX(${visual.x}px) rotate(${visual.rotation}deg)`,
+        opacity: visual.opacity,
+        cursor: isDragging ? 'grabbing' : 'grab',
+        willChange: isDragging ? 'transform, opacity' : 'auto',
       }}
-      onMouseDown={handleMouseDown}
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleEnd}
-      onMouseLeave={handleEnd}
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={handleEnd}
+      onMouseDown={onMouseDown}
+      onTouchStart={onTouchStart}
+      onTouchMove={onTouchMove}
+      onTouchEnd={onTouchEnd}
     >
-      {/* Swipe indicators */}
-      {isDragging && (
-        <>
-          <div
-            className={`absolute top-4 left-4 px-3 py-1 rounded-full font-bold transition-opacity ${
-              currentTransform.x < -50 ? 'opacity-100 bg-red-500 text-white' : 'opacity-0'
-            }`}
-          >
-            PASS
-          </div>
-          <div
-            className={`absolute top-4 right-4 px-3 py-1 rounded-full font-bold transition-opacity ${
-              currentTransform.x > 50 ? 'opacity-100 bg-green-500 text-white' : 'opacity-0'
-            }`}
-          >
-            LIKE
-          </div>
-        </>
-      )}
+      {/* Swipe indicators — fade in based on drag distance */}
+      <div
+        className="absolute top-4 left-4 px-4 py-2 rounded-full font-bold text-sm bg-red-500 text-white border-2 border-red-400 z-10"
+        style={{ opacity: visual.x < -20 ? Math.min((-visual.x - 20) / 60, 1) : 0 }}
+      >
+        ✗ PASS
+      </div>
+      <div
+        className="absolute top-4 right-4 px-4 py-2 rounded-full font-bold text-sm bg-green-500 text-white border-2 border-green-400 z-10"
+        style={{ opacity: visual.x > 20 ? Math.min((visual.x - 20) / 60, 1) : 0 }}
+      >
+        LIKE ♥
+      </div>
 
       {/* Status indicators */}
-      <div className="absolute top-4 right-4 flex gap-2">
-        {isFavorite && <span className="text-2xl">❤️</span>}
-        {isDone && <span className="text-2xl">✅</span>}
-        {activity.isPremium && <span className="text-2xl">⭐</span>}
-      </div>
+      {!isDragging && (
+        <div className="absolute top-4 right-4 flex gap-2 z-10">
+          {isFavorite && <span className="text-2xl">❤️</span>}
+          {isDone && <span className="text-2xl">✅</span>}
+          {activity.isPremium && <span className="text-2xl">⭐</span>}
+        </div>
+      )}
 
       <div className="p-6 h-full flex flex-col">
         {/* Header */}
