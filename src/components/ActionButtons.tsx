@@ -9,59 +9,59 @@ interface ActionButtonsProps {
   isDone: boolean;
 }
 
-export function ActionButtons({ 
-  onPass, 
-  onLike, 
-  onDone, 
-  onToggleFavorite, 
-  isFavorite, 
-  isDone 
+export function ActionButtons({
+  onPass,
+  onLike,
+  onDone,
+  onToggleFavorite,
+  isFavorite,
+  isDone
 }: ActionButtonsProps) {
   return (
-    <div className="flex justify-center gap-4">
-      {/* Pass Button */}
+    <div className="flex justify-center items-center gap-3">
+      {/* Skip */}
       <button
         onClick={onPass}
-        className="w-16 h-16 bg-red-500 hover:bg-red-600 text-white rounded-full shadow-lg hover:shadow-xl transition-all duration-200 flex items-center justify-center"
-        aria-label="Pass this activity"
+        className="w-14 h-14 bg-white/15 hover:bg-red-500/80 text-white rounded-full shadow-lg transition-all duration-200 flex items-center justify-center backdrop-blur-sm group"
+        aria-label="Skip activity"
       >
-        <span className="text-2xl">✕</span>
+        <span className="text-xl group-hover:scale-110 transition-transform">✕</span>
       </button>
 
-      {/* Favorite Toggle */}
+      {/* Favourite */}
       <button
         onClick={onToggleFavorite}
-        className={`w-16 h-16 ${
-          isFavorite 
-            ? 'bg-pink-500 hover:bg-pink-600' 
-            : 'bg-gray-400 hover:bg-gray-500'
-        } text-white rounded-full shadow-lg hover:shadow-xl transition-all duration-200 flex items-center justify-center`}
-        aria-label={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+        className={`w-14 h-14 ${
+          isFavorite
+            ? 'bg-pink-500 shadow-pink-500/30'
+            : 'bg-white/15 hover:bg-pink-500/80'
+        } text-white rounded-full shadow-lg transition-all duration-200 flex items-center justify-center backdrop-blur-sm`}
+        aria-label={isFavorite ? 'Remove from favourites' : 'Add to favourites'}
       >
-        <span className="text-2xl">❤️</span>
+        <span className="text-xl">{isFavorite ? '❤️' : '🤍'}</span>
       </button>
 
-      {/* Done Button */}
+      {/* Done */}
       <button
         onClick={onDone}
         disabled={isDone}
-        className={`w-16 h-16 ${
-          isDone 
-            ? 'bg-green-300 cursor-not-allowed' 
-            : 'bg-green-500 hover:bg-green-600'
-        } text-white rounded-full shadow-lg hover:shadow-xl transition-all duration-200 flex items-center justify-center`}
-        aria-label={isDone ? 'Already done today' : 'Mark as done today'}
+        className={`w-14 h-14 ${
+          isDone
+            ? 'bg-emerald-500 shadow-emerald-500/30 cursor-default'
+            : 'bg-white/15 hover:bg-emerald-500/80'
+        } text-white rounded-full shadow-lg transition-all duration-200 flex items-center justify-center backdrop-blur-sm`}
+        aria-label={isDone ? 'Already done' : 'Mark as done'}
       >
-        <span className="text-2xl">✓</span>
+        <span className="text-xl">{isDone ? '✅' : '✓'}</span>
       </button>
 
-      {/* Like Button */}
+      {/* Next / Like */}
       <button
         onClick={onLike}
-        className="w-16 h-16 bg-green-500 hover:bg-green-600 text-white rounded-full shadow-lg hover:shadow-xl transition-all duration-200 flex items-center justify-center"
-        aria-label="Like this activity"
+        className="w-14 h-14 bg-white/15 hover:bg-green-500/80 text-white rounded-full shadow-lg transition-all duration-200 flex items-center justify-center backdrop-blur-sm group"
+        aria-label="Like and next"
       >
-        <span className="text-2xl">👍</span>
+        <span className="text-xl group-hover:scale-110 transition-transform">👍</span>
       </button>
     </div>
   );
